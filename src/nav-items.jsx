@@ -1,4 +1,5 @@
 import { Home } from "lucide-react";
+import { lazy } from 'react';
 import Index from "./pages/Index.jsx";
 
 /**
