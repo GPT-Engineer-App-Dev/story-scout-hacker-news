@@ -13,12 +13,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const fetchTopStories = async (sortBy = 'points') => {
   try {
-    const response = await fetch(`https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=100&numericFilters=points>1&sort=${sortBy === 'date' ? 'created_at_i' : 'points'}_desc`);
+    const response = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-    const data = await response.json();
-    return data;
+    const storyIds = await response.json();
+    const topStories = await Promise.all(
+      storyIds.slice(0, 100).map(async (id) => {
+        const storyResponse = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`);
+        if (!storyResponse.ok) {
+          throw new Error(`HTTP error! status: ${storyResponse.status}`);
+        }
+        return storyResponse.json();
+      })
+    );
+    return topStories.sort((a, b) => sortBy === 'date' ? b.time - a.time : b.score - a.score);
   } catch (error) {
     console.error("Error fetching stories:", error);
     throw new Error(`Failed to fetch stories: ${error.message}`);
@@ -35,13 +44,13 @@ const Index = () => {
     queryFn: () => fetchTopStories(sortBy),
   });
 
-  const filteredStories = data?.hits?.filter(story =>
+  const filteredStories = data?.filter(story =>
     story.title.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
 
   const topTenStories = filteredStories.slice(0, 10).map(story => ({
     ...story,
-    points: story.points || 0,
+    points: story.score || 0,
     title: story.title.length > 50 ? story.title.substring(0, 50) + '...' : story.title
   }));
 
@@ -123,15 +132,15 @@ const Index = () => {
                       <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
                         <span className="flex items-center">
                           <ThumbsUp className="w-4 h-4 mr-1" />
-                          {story.points}
+                          {story.score}
                         </span>
                         <span className="flex items-center">
                           <User className="w-4 h-4 mr-1" />
-                          {story.author}
+                          {story.by}
                         </span>
                         <span className="flex items-center">
                           <Calendar className="w-4 h-4 mr-1" />
-                          {new Date(story.created_at).toLocaleDateString()}
+                          {new Date(story.time * 1000).toLocaleDateString()}
                         </span>
                       </div>
                       <div className="mt-4 flex justify-between items-center">
