@@ -12,11 +12,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Skeleton } from "@/components/ui/skeleton";
 
 const fetchTopStories = async (sortBy = 'points') => {
-  const response = await fetch(`https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=100&sort=${sortBy === 'date' ? 'date' : 'points'}`);
-  if (!response.ok) {
-    throw new Error('Network response was not ok');
+  try {
+    const response = await fetch(`https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=100&numericFilters=points>1&sort=${sortBy === 'date' ? 'created_at_i' : 'points'}_desc`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error fetching stories:", error);
+    throw new Error(`Failed to fetch stories: ${error.message}`);
   }
-  return response.json();
 };
 
 const Index = () => {
@@ -29,13 +35,29 @@ const Index = () => {
     queryFn: () => fetchTopStories(sortBy),
   });
 
-  const filteredStories = data?.hits.filter(story =>
+  const filteredStories = data?.hits?.filter(story =>
     story.title.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
 
-  const topTenStories = filteredStories.slice(0, 10);
+  const topTenStories = filteredStories.slice(0, 10).map(story => ({
+    ...story,
+    points: story.points || 0,
+    title: story.title.length > 50 ? story.title.substring(0, 50) + '...' : story.title
+  }));
 
-  if (error) return <div>Error loading stories: {error.message}</div>;
+  if (error) return (
+    <div className="flex items-center justify-center h-screen">
+      <Card className="w-full max-w-md">
+        <CardContent className="p-6">
+          <h2 className="text-2xl font-bold text-red-600 mb-4">Error Loading Stories</h2>
+          <p className="text-gray-700 dark:text-gray-300">{error.message}</p>
+          <Button className="mt-4" onClick={() => window.location.reload()}>
+            Try Again
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 dark:from-gray-900 dark:to-blue-900 p-8">
