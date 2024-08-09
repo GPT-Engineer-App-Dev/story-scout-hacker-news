@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
 import { motion } from 'framer-motion';
@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const fetchTopStories = async (sortBy = 'points') => {
   try {
@@ -34,14 +35,45 @@ const fetchTopStories = async (sortBy = 'points') => {
   }
 };
 
+const fetchComments = async (storyId) => {
+  try {
+    const storyResponse = await fetch(`https://hacker-news.firebaseio.com/v0/item/${storyId}.json`);
+    if (!storyResponse.ok) {
+      throw new Error(`HTTP error! status: ${storyResponse.status}`);
+    }
+    const story = await storyResponse.json();
+    const commentIds = story.kids || [];
+    const comments = await Promise.all(
+      commentIds.slice(0, 5).map(async (id) => {
+        const commentResponse = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`);
+        if (!commentResponse.ok) {
+          throw new Error(`HTTP error! status: ${commentResponse.status}`);
+        }
+        return commentResponse.json();
+      })
+    );
+    return comments;
+  } catch (error) {
+    console.error("Error fetching comments:", error);
+    throw new Error(`Failed to fetch comments: ${error.message}`);
+  }
+};
+
 const Index = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('points');
   const { theme, setTheme } = useTheme();
+  const [selectedStoryId, setSelectedStoryId] = useState(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['topStories', sortBy],
     queryFn: () => fetchTopStories(sortBy),
+  });
+
+  const { data: comments, isLoading: isLoadingComments, error: commentsError } = useQuery({
+    queryKey: ['comments', selectedStoryId],
+    queryFn: () => fetchComments(selectedStoryId),
+    enabled: !!selectedStoryId,
   });
 
   const filteredStories = data?.filter(story =>
@@ -53,6 +85,10 @@ const Index = () => {
     points: story.score || 0,
     title: story.title.length > 50 ? story.title.substring(0, 50) + '...' : story.title
   }));
+
+  const handleCommentClick = useCallback((storyId) => {
+    setSelectedStoryId(storyId);
+  }, []);
 
   if (error) return (
     <div className="flex items-center justify-center h-screen">
@@ -154,7 +190,7 @@ const Index = () => {
                         </a>
                         <Dialog>
                           <DialogTrigger asChild>
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" onClick={() => handleCommentClick(story.id)}>
                               <MessageSquare className="w-4 h-4 mr-2" />
                               Comments
                             </Button>
@@ -163,10 +199,28 @@ const Index = () => {
                             <DialogHeader>
                               <DialogTitle>Comments</DialogTitle>
                             </DialogHeader>
-                            <div className="max-h-[400px] overflow-y-auto">
-                              {/* Implement comment fetching and display here */}
-                              <p>Comments for story ID: {story.objectID}</p>
-                            </div>
+                            <ScrollArea className="h-[400px] w-full">
+                              {isLoadingComments ? (
+                                <div className="space-y-2">
+                                  {[...Array(5)].map((_, i) => (
+                                    <Skeleton key={i} className="h-20 w-full" />
+                                  ))}
+                                </div>
+                              ) : commentsError ? (
+                                <p className="text-red-500">Error loading comments: {commentsError.message}</p>
+                              ) : comments && comments.length > 0 ? (
+                                comments.map((comment) => (
+                                  <div key={comment.id} className="mb-4 p-2 border-b">
+                                    <p className="text-sm text-gray-500 mb-1">
+                                      {comment.by} | {new Date(comment.time * 1000).toLocaleString()}
+                                    </p>
+                                    <p className="text-sm" dangerouslySetInnerHTML={{ __html: comment.text }}></p>
+                                  </div>
+                                ))
+                              ) : (
+                                <p>No comments available.</p>
+                              )}
+                            </ScrollArea>
                           </DialogContent>
                         </Dialog>
                       </div>
